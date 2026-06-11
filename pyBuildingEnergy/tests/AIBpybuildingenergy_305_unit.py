@@ -165,74 +165,71 @@ def building_data():
                 "height": HEIGHT,
                 "length": LEN_NS,
             },
-            # 2) NORTH INTERIOR WALL (to Apt 306)
-            # sky_view_factor=0.5 for interior walls: prevents ISO 13370 soil treatment
+            # 2-6) INTERIOR SURFACES — neighbours are conditioned at same setpoint,
+            # so net heat transfer ≈ 0. U=0.001 makes them effectively adiabatic
+            # while keeping their thermal mass in the simulation.
             {
                 "name": "North wall to Apt 306",
                 "type": "opaque",
                 "area": A_NORTH_GROSS,
                 "sky_view_factor": 0.5,
-                "u_value": U_INT_WALL,
+                "u_value": 0.001,
                 "solar_absorptance": ABS_INT,
                 "thermal_capacity": C_INT_WALL,
                 "orientation": {"azimuth": 0.0, "tilt": 90.0},
-                "name_adj_zone": "apt_north",
+                "name_adj_zone": None,
                 "height": HEIGHT,
                 "length": LEN_EW,
             },
-            # 3) SOUTH INTERIOR WALL (to Apt 304)
             {
                 "name": "South wall to Apt 304",
                 "type": "opaque",
                 "area": A_SOUTH_GROSS,
                 "sky_view_factor": 0.5,
-                "u_value": U_INT_WALL,
+                "u_value": 0.001,
                 "solar_absorptance": ABS_INT,
                 "thermal_capacity": C_INT_WALL,
                 "orientation": {"azimuth": 180.0, "tilt": 90.0},
-                "name_adj_zone": "apt_south",
+                "name_adj_zone": None,
                 "height": HEIGHT,
                 "length": LEN_EW,
             },
-            # 4) EAST INTERIOR WALL (to corridor)
             {
                 "name": "East wall to corridor",
                 "type": "opaque",
                 "area": A_EAST_GROSS,
                 "sky_view_factor": 0.5,
-                "u_value": U_INT_WALL,
+                "u_value": 0.001,
                 "solar_absorptance": ABS_INT,
                 "thermal_capacity": C_INT_WALL,
                 "orientation": {"azimuth": 90.0, "tilt": 90.0},
-                "name_adj_zone": "corridor",
+                "name_adj_zone": None,
                 "height": HEIGHT,
                 "length": LEN_NS,
             },
-            # 5) FLOOR (to Apt 205 below)
             {
                 "name": "Floor to Apt 205",
                 "type": "opaque",
                 "area": FLOOR_AREA,
                 "sky_view_factor": 0.5,
-                "u_value": U_INT_SLAB,
+                "u_value": 0.001,
                 "solar_absorptance": ABS_INT,
                 "thermal_capacity": C_INT_SLAB,
                 "orientation": {"azimuth": 0.0, "tilt": 0.0},
-                "name_adj_zone": "apt_below",
+                "name_adj_zone": None,
                 "height": LEN_NS,
                 "length": LEN_EW,
             },
-            # 6) CEILING (to Apt 405 above)
             {
                 "name": "Ceiling to Apt 405",
                 "type": "opaque",
                 "area": FLOOR_AREA,
                 "sky_view_factor": 0.5,
-                "u_value": U_INT_SLAB,
+                "u_value": 0.001,
                 "solar_absorptance": ABS_INT,
                 "thermal_capacity": C_INT_SLAB,
                 "orientation": {"azimuth": 0.0, "tilt": 0.0},
-                "name_adj_zone": "apt_above",
+                "name_adj_zone": None,
                 "height": LEN_NS,
                 "length": LEN_EW,
             },
@@ -474,9 +471,9 @@ def test_iso52016_calculation(building_data, output_dir):
         country_calendar     = country_calendar,
     )
 
-    # yearly_cons is in Wh
-    Q_DHW_annual_Wh  = float(yearly_cons)
-    Q_DHW_annual_kWh = Q_DHW_annual_Wh / 1000.0
+    # yearly_cons is in kWh (WATER_SPECIFIC_HEAT_CAPACITY = 0.00116 kWh/kgK)
+    Q_DHW_annual_kWh = float(yearly_cons)
+    Q_DHW_annual_Wh  = Q_DHW_annual_kWh * 1000.0
 
     Q_H_annual      = float(annual_results_df["Q_H_annual"].iloc[0])
     Q_C_annual      = float(annual_results_df["Q_C_annual"].iloc[0])
@@ -566,7 +563,7 @@ def test_iso52016_calculation(building_data, output_dir):
 
     print(f"\n  DOMESTIC HOT WATER")
     print(f"    Annual energy       : {Q_DHW_annual_kWh:6.1f} kWh/yr")
-    print(f"    Annual volume       : {yearly_volume:6.1f} L/yr  ({yearly_volume/365:.1f} L/day avg)")
+    print(f"    Annual volume       : {yearly_volume*1000:6.0f} L/yr  ({yearly_volume*1000/365:.1f} L/day avg)")
 
     print(f"\n  OUTPUT FILES")
     print(f"    Hourly results      : {hourly_sim_path}")
