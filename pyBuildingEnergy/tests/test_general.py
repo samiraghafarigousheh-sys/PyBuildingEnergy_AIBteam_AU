@@ -220,7 +220,7 @@ def building_data():
             },
             "type_ventilation": "occupancy",
             "ventilation": {
-                "ventilation_type": "mechanical",
+                "ventilation_type": "temp_wind",
                 "flow_rate_per_person" : 0.005,
                 "custom_heat_transfer_coefficient_ventilation": 0.0,
                 "weekday": [0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0],
