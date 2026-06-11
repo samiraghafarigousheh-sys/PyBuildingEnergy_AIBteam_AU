@@ -84,8 +84,10 @@ def building_data():
             "wall_thickness": 0.20,
             "n_floors": 1,
             "building_type_class": "Residential_apartment",
-            "adj_zones_present": True,
-            "number_adj_zone": 5,
+            # adj_zones_present=False: neighbouring apartments are conditioned
+            # at the same setpoint — net heat transfer ≈ 0, modelled as adiabatic
+            "adj_zones_present": False,
+            "number_adj_zone": 0,
             "net_floor_area": FLOOR_AREA,
             "construction_class": "class_iii",
         },
@@ -461,7 +463,7 @@ def test_iso52016_calculation(building_data, output_dir):
         teta_w_c_ref         = 10.0,
         teta_w_h_ref         = 60.0,
         teta_W_cold          = 10.0,
-        mode_calc            = "volume_type_bui",
+        mode_calc            = "number_of_units",
         building_type_B3     = None,
         building_area        = building_area,
         unit_count           = 2,
@@ -520,10 +522,10 @@ def test_iso52016_calculation(building_data, output_dir):
     t_cb = sp.get("cooling_setback",  "N/A")
 
     # Peak hourly loads
-    Q_H_peak_W = float(hourly_sim["Q_H_nd"].max())  if "Q_H_nd" in hourly_sim.columns else float("nan")
-    Q_C_peak_W = float(hourly_sim["Q_C_nd"].max())  if "Q_C_nd" in hourly_sim.columns else float("nan")
-    T_max      = float(hourly_sim["Tm_op"].max())   if "Tm_op" in hourly_sim.columns else float("nan")
-    T_min      = float(hourly_sim["Tm_op"].min())   if "Tm_op" in hourly_sim.columns else float("nan")
+    Q_H_peak_W = float(hourly_sim["Q_H"].max())  if "Q_H" in hourly_sim.columns else float("nan")
+    Q_C_peak_W = float(hourly_sim["Q_C"].max())  if "Q_C" in hourly_sim.columns else float("nan")
+    T_max      = float(hourly_sim["T_op"].max()) if "T_op" in hourly_sim.columns else float("nan")
+    T_min      = float(hourly_sim["T_op"].min()) if "T_op" in hourly_sim.columns else float("nan")
 
     sep = "=" * 52
 
