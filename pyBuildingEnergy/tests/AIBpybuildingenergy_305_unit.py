@@ -327,9 +327,8 @@ def building_data():
             "internal_gains": [
                 {
                     "name": "occupants",
-                    # 1 person x ~80 W sensible / 20 m² = 4 W/m²
-                    # (prev. 8 W/m² implied 2 persons for a single studio)
-                    "full_load": 4.0,
+                    # 2 occupants x ~80 W sensible / 20 m² = 8 W/m²
+                    "full_load": 8.0,
                     #            0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18   19   20   21   22   23
                     "weekday": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.4, 0.5, 0.5, 0.5, 0.4, 0.5, 0.5, 0.5, 0.5, 0.5, 1.0, 1.0, 1.0, 1.0],
                     "weekend": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.8, 0.7, 0.7, 0.7, 0.7, 0.5, 0.5, 0.7, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
@@ -473,7 +472,7 @@ def test_iso52016_calculation(building_data, output_dir):
         mode_calc            = "number_of_units",
         building_type_B3     = None,
         building_area        = building_area,
-        unit_count           = 1,   # single studio — prev. 2 doubled DHW to 89 L/day
+        unit_count           = 2,   # 2 occupants
         building_type_B5     = "Dwelling",
         residential_typology = "apartments_dwellings - AVG",
         calculation_method   = "correlation",
