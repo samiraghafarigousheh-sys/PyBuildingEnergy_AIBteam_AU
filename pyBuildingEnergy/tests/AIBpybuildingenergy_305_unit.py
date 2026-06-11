@@ -382,6 +382,9 @@ def test_sanitize_and_validate_bui(building_data, fix):
 def test_iso52016_calculation(building_data, output_dir):
     import pybuildingenergy as pybui
 
+    _lat = building_data["building"]["latitude"]
+    _lon = building_data["building"]["longitude"]
+
     bui_checked, issues = pybui.sanitize_and_validate_BUI(building_data, fix=True)
     errors = [e for e in issues if e["level"] == "ERROR"]
     assert len(errors) == 0, f"Errors in data validation: {errors}"
@@ -506,12 +509,61 @@ def test_iso52016_calculation(building_data, output_dir):
     assert os.path.exists(hourly_sim_path)
     assert os.path.exists(annual_sim_path)
 
-    print("\n=== Apt 305 — Annual Energy Summary ===")
-    print(f"  Heating demand :  {Q_H_annual/1000:8.1f} kWh")
-    print(f"  Cooling demand :  {Q_C_annual/1000:8.1f} kWh")
-    print(f"  DHW demand     :  {Q_DHW_annual_kWh:8.1f} kWh")
-    print(f"  Latent load    :  {Q_Latent_annual/1000:8.1f} kWh")
-    print(f"  TOTAL          :  {Q_total/1000:8.1f} kWh")
-    print(f"\nSetpoints used:")
-    print(bui_checked["building_parameters"]["temperature_setpoints"])
-    print(f"\nOutput CSVs written to: {output_dir}")
+    sp   = bui_checked["building_parameters"]["temperature_setpoints"]
+    ncc  = sp.get("ncc_zone", "N/A")
+    t_h  = sp.get("heating_setpoint", "N/A")
+    t_hb = sp.get("heating_setback",  "N/A")
+    t_c  = sp.get("cooling_setpoint", "N/A")
+    t_cb = sp.get("cooling_setback",  "N/A")
+
+    # Peak hourly loads
+    Q_H_peak_W = float(hourly_sim["Q_H_nd"].max())  if "Q_H_nd" in hourly_sim.columns else float("nan")
+    Q_C_peak_W = float(hourly_sim["Q_C_nd"].max())  if "Q_C_nd" in hourly_sim.columns else float("nan")
+    T_max      = float(hourly_sim["Tm_op"].max())   if "Tm_op" in hourly_sim.columns else float("nan")
+    T_min      = float(hourly_sim["Tm_op"].min())   if "Tm_op" in hourly_sim.columns else float("nan")
+
+    sep = "=" * 52
+
+    print(f"\n{sep}")
+    print(f"  APT 305 — 50 Barry St Carlton  |  ISO 52016-1")
+    print(sep)
+
+    print(f"\n  BUILDING")
+    print(f"    Floor area          : {FLOOR_AREA:6.1f} m²")
+    print(f"    Volume              : {VOLUME:6.1f} m³")
+    print(f"    NCC climate zone    : {ncc}")
+    print(f"    Location            : {_lat:.3f}°, {_lon:.3f}°")
+    print(f"    Weather source      : {'EPW' if use_epw else 'PVGIS'}")
+
+    print(f"\n  SETPOINTS")
+    print(f"    Heating setpoint    : {t_h} °C")
+    print(f"    Heating setback     : {t_hb} °C")
+    print(f"    Cooling setpoint    : {t_c} °C")
+    print(f"    Cooling setback     : {t_cb} °C")
+
+    print(f"\n  ANNUAL ENERGY DEMAND")
+    print(f"    {'Item':<28} {'kWh/yr':>8}  {'kWh/m²·yr':>10}")
+    print(f"    {'-'*48}")
+    print(f"    {'Space heating':<28} {Q_H_annual/1000:>8.1f}  {Q_H_annual/1000/FLOOR_AREA:>10.1f}")
+    print(f"    {'Space cooling':<28} {Q_C_annual/1000:>8.1f}  {Q_C_annual/1000/FLOOR_AREA:>10.1f}")
+    print(f"    {'Latent (dehumid.) load':<28} {Q_Latent_annual/1000:>8.1f}  {Q_Latent_annual/1000/FLOOR_AREA:>10.1f}")
+    print(f"    {'Domestic hot water':<28} {Q_DHW_annual_kWh:>8.1f}  {Q_DHW_annual_kWh/FLOOR_AREA:>10.1f}")
+    print(f"    {'-'*48}")
+    print(f"    {'TOTAL':<28} {Q_total/1000:>8.1f}  {Q_total/1000/FLOOR_AREA:>10.1f}")
+
+    print(f"\n  PEAK LOADS")
+    print(f"    Peak heating power  : {Q_H_peak_W/1000:6.2f} kW  ({Q_H_peak_W/FLOOR_AREA:.0f} W/m²)")
+    print(f"    Peak cooling power  : {Q_C_peak_W/1000:6.2f} kW  ({Q_C_peak_W/FLOOR_AREA:.0f} W/m²)")
+
+    print(f"\n  OPERATIVE TEMPERATURE RANGE")
+    print(f"    Max (free-running)  : {T_max:6.1f} °C")
+    print(f"    Min (free-running)  : {T_min:6.1f} °C")
+
+    print(f"\n  DOMESTIC HOT WATER")
+    print(f"    Annual energy       : {Q_DHW_annual_kWh:6.1f} kWh/yr")
+    print(f"    Annual volume       : {yearly_volume:6.1f} L/yr  ({yearly_volume/365:.1f} L/day avg)")
+
+    print(f"\n  OUTPUT FILES")
+    print(f"    Hourly results      : {hourly_sim_path}")
+    print(f"    Annual results      : {annual_sim_path}")
+    print(f"\n{sep}\n")
