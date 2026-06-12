@@ -1,3 +1,8 @@
+# ---------------------------------------------------------------------------
+# Colab setup — run once before executing this test:
+#   !pip install timezonefinder pyecharts epw holidays tqdm plotly \
+#               scikit-learn pvlib workalendar -q
+# ---------------------------------------------------------------------------
 import os
 import sys
 import warnings
