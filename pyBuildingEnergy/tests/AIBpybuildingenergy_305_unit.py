@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pyBuildingEnergy.tests.climate_setpoints import get_ncc_setpoints, apply_setpoints_to_building
+from pyBuildingEnergy.tests.climate_setpoints import get_ncc_setpoints, apply_setpoints_to_building, geocode_address
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 pd.options.mode.chained_assignment = None
@@ -75,12 +75,16 @@ A_WEST_OPAQUE = A_WEST_GROSS - A_WINDOW_TOTAL  # 10.20 m²
 # EPW weather file path — update to match your local path
 EPW_PATH = r"C:\Users\prakh\OneDrive\Desktop\ISO 52016-1\pybuildinenergy_AIB\pyBuildingEnergy\tests\AUS_VIC.Melbourne_IWEC.epw"
 
+# Apartment address — lat/lon resolved at runtime via Nominatim geocoding
+APARTMENT_ADDRESS = "305/50 Barry Street, Carlton, VIC 3053, Australia"
+
 
 @pytest.fixture
 def building_data():
-    _lat = -37.800
-    _lon = 144.968
-    _sp  = get_ncc_setpoints(lat=_lat, lon=_lon)
+    _geo = geocode_address(APARTMENT_ADDRESS)
+    _lat = _geo["lat"]
+    _lon = _geo["lon"]
+    _sp  = get_ncc_setpoints(address=APARTMENT_ADDRESS)
     _single_cooling = (_sp["cooling_setpoint_bedroom"] + _sp["cooling_setpoint_living"]) / 2.0
 
     return {
