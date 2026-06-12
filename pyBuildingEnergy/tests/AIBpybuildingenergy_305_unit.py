@@ -63,8 +63,8 @@ A_SOUTH_GROSS = LEN_EW * HEIGHT   # 10.8 m²  interior — to Apt 304
 # Two horizontal-slider windows on the WEST wall
 # Sized from exterior photo: each pane ~1.5 m wide x 1.1 m high -> 1.65 m² each
 # Total glazing 3.30 m² = 24 % of 13.5 m² west facade (prev. 0.9x0.9 was 12 %)
-WIN_WIDTH_FIXED,    WIN_HEIGHT_FIXED    = 1.5, 1.1
-WIN_WIDTH_OPERABLE, WIN_HEIGHT_OPERABLE = 1.5, 1.1
+WIN_WIDTH_FIXED,    WIN_HEIGHT_FIXED    = 0.9, 0.9
+WIN_WIDTH_OPERABLE, WIN_HEIGHT_OPERABLE = 0.9, 0.9
 
 A_WINDOW_FIXED    = WIN_WIDTH_FIXED * WIN_HEIGHT_FIXED         # 1.65 m²
 A_WINDOW_OPERABLE = WIN_WIDTH_OPERABLE * WIN_HEIGHT_OPERABLE   # 1.65 m²
@@ -73,14 +73,27 @@ A_WINDOW_TOTAL    = A_WINDOW_FIXED + A_WINDOW_OPERABLE         # 3.30 m²
 A_WEST_OPAQUE = A_WEST_GROSS - A_WINDOW_TOTAL  # 10.20 m²
 
 # EPW weather file path — update to match your local path
-EPW_PATH = r"C:\Users\prakh\OneDrive\Desktop\ISO 52016-1\pybuildinenergy_AIB\pyBuildingEnergy\tests\AUS_VIC.Melbourne_IWEC.epw"
+
+#EPW_PATH = r"C:\Users\prakh\OneDrive\Desktop\ISO 52016-1\pybuildinenergy_AIB\pyBuildingEnergy\tests\AUS_VIC.Melbourne_IWEC.epw"
+#1 Configuration
+weather_file   = None                                   # use PVGIS (API-based, no local file needed)
+WEATHER_SOURCE = "pvgis"                                # latest PVGIS 2016-2023 TMY for Melbourne
+
+folder_path = os.path.join(_HERE, "outputs") # Define folder_path before use
+OUTPUT_DIR = folder_path
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+
+# Apartment address — lat/lon resolved at runtime via Nominatim geocoding
+APARTMENT_ADDRESS = "305/50 Barry Street, Carlton, VIC 3053, Australia"
 
 
 @pytest.fixture
 def building_data():
-    _lat = -37.800
-    _lon = 144.968
-    _sp  = get_ncc_setpoints(lat=_lat, lon=_lon)
+    _geo = geocode_address(APARTMENT_ADDRESS)
+    _lat = _geo["lat"]
+    _lon = _geo["lon"]
+    _sp  = get_ncc_setpoints(address=APARTMENT_ADDRESS)
     _single_cooling = (_sp["cooling_setpoint_bedroom"] + _sp["cooling_setpoint_living"]) / 2.0
 
     return {
@@ -181,8 +194,8 @@ def building_data():
                 "name": "North wall to Apt 306",
                 "type": "opaque",
                 "area": A_NORTH_GROSS,
-                "sky_view_factor": 0.5,
-                "u_value": 0.001,
+                "sky_view_factor": 0.0,
+                "u_value":  U_INT_WALL,
                 "solar_absorptance": ABS_INT,
                 "thermal_capacity": C_INT_WALL,
                 "orientation": {"azimuth": 0.0, "tilt": 90.0},
@@ -194,8 +207,8 @@ def building_data():
                 "name": "South wall to Apt 304",
                 "type": "opaque",
                 "area": A_SOUTH_GROSS,
-                "sky_view_factor": 0.5,
-                "u_value": 0.001,
+                "sky_view_factor": 0.0,
+                "u_value":  U_INT_WALL,
                 "solar_absorptance": ABS_INT,
                 "thermal_capacity": C_INT_WALL,
                 "orientation": {"azimuth": 180.0, "tilt": 90.0},
@@ -207,8 +220,8 @@ def building_data():
                 "name": "East wall to corridor",
                 "type": "opaque",
                 "area": A_EAST_GROSS,
-                "sky_view_factor": 0.5,
-                "u_value": 0.001,
+                "sky_view_factor": 0.0,
+                "u_value": U_INT_WALL,
                 "solar_absorptance": ABS_INT,
                 "thermal_capacity": C_INT_WALL,
                 "orientation": {"azimuth": 90.0, "tilt": 90.0},
@@ -220,8 +233,8 @@ def building_data():
                 "name": "Floor to Apt 205",
                 "type": "opaque",
                 "area": FLOOR_AREA,
-                "sky_view_factor": 0.5,
-                "u_value": 0.001,
+                "sky_view_factor": 0.0,
+                "u_value": U_INT_WALL,
                 "solar_absorptance": ABS_INT,
                 "thermal_capacity": C_INT_SLAB,
                 "orientation": {"azimuth": 0.0, "tilt": 0.0},
@@ -233,8 +246,8 @@ def building_data():
                 "name": "Ceiling to Apt 405",
                 "type": "opaque",
                 "area": FLOOR_AREA,
-                "sky_view_factor": 0.5,
-                "u_value": 0.001,
+                "sky_view_factor": 0.0,
+                "u_value": U_INT_WALL,
                 "solar_absorptance": ABS_INT,
                 "thermal_capacity": C_INT_SLAB,
                 "orientation": {"azimuth": 0.0, "tilt": 0.0},
@@ -309,21 +322,13 @@ def building_data():
                 "cooling_capacity": 10_000_000.0,
                 "units": "W",
             },
-            "ventilation": {
-                "ventilation_type": "occupancy",
-                "flow_rate_per_person": 2.0,
-                "custom_heat_transfer_coefficient_ventilation": 0.0,
-                "weekday": [1.0] * 24,
-                "weekend": [1.0] * 24,
-            },
-            "ventilation_profile": {
-                "weekday": [1.0] * 24,
-                "weekend": [1.0] * 24,
-            },
-            "airflow_rates": {
-                "infiltration_rate": 1.0,
-                "units": "ACH (air changes per hour)",
-            },
+           "ventilation": {
+            "ventilation_type": "occupancy",
+            "flow_rate_per_person": 2.0,
+            "units": "l/(s m²)",
+            "custom_heat_transfer_coefficient_ventilation": None,
+            "info": "Annual-avg from seasonal pattern: Su+Sp open / Au partial / Wi closed",
+        },
             "internal_gains": [
                 {
                     "name": "occupants",
