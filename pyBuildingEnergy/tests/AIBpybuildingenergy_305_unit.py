@@ -1,3 +1,5 @@
+!pip install pytest pandas numpy timezonefinder
+
 import os
 import sys
 import warnings
