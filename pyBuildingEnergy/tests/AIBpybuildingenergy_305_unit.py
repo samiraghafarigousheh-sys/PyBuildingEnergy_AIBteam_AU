@@ -1,4 +1,4 @@
-!pip install pytest pandas numpy timezonefinder
+
 
 import os
 import sys
@@ -75,7 +75,7 @@ A_WINDOW_TOTAL    = A_WINDOW_FIXED + A_WINDOW_OPERABLE         # 3.30 m²
 A_WEST_OPAQUE = A_WEST_GROSS - A_WINDOW_TOTAL  # 10.20 m²
 
 # EPW weather file path — update to match your local path
-
+!pip install pytest pandas numpy timezonefinder
 #EPW_PATH = r"C:\Users\prakh\OneDrive\Desktop\ISO 52016-1\pybuildinenergy_AIB\pyBuildingEnergy\tests\AUS_VIC.Melbourne_IWEC.epw"
 #1 Configuration
 weather_file   = None                                   # use PVGIS (API-based, no local file needed)
