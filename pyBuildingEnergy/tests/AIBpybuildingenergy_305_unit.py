@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from pyBuildingEnergy.tests.climate_setpoints import get_ncc_setpoints, apply_setpoints_to_building
+from tests.climate_setpoints import get_ncc_setpoints, apply_setpoints_to_building
 
 warnings.simplefilter(action='ignore', category=FutureWarning)
 pd.options.mode.chained_assignment = None
