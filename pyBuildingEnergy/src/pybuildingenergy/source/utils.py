@@ -1925,18 +1925,27 @@ class ISO52016:
                         
                         # --- ISO 13370 BASEMENT WALL UPGRADE ---
                         # If the ground surface is vertical (tilt == 90), it is a basement wall.
+                        # Skip the upgrade for surfaces that are interior partition walls
+                        # (i.e. surfaces with a named adjacent zone such as neighbouring
+                        # apartments or corridors). Those surfaces have sky_view_factor=0
+                        # because they face a conditioned adjacent zone, NOT because they are
+                        # in contact with the ground.
                         tilt = float(surf.get("orientation", {}).get("tilt", 0.0))
-                        if tilt == 90.0:
+                        is_interior_partition = surf.get("name_adj_zone") is not None
+                        if tilt == 90.0 and not is_interior_partition:
                             # Use provided depth or default to building height
                             z = float(surf.get("basement_depth", building_object["building"]["height"]))
                             lambda_gr = 2.0 # Standard soil conductivity [W/mK]
-                            
+
                             # Overwrite the raw wall U-value with the highly insulated soil U-value
                             old_u = float(surf["u_value"])
                             new_u = calc_basement_wall_u_value(old_u, lambda_gr, z)
                             surf["u_value"] = new_u
-                            
+
                             print(f"[ISO 13370] Converted Basement Wall '{surf['name']}': Raw U={old_u:.2f} -> Soil-Adjusted U={new_u:.3f}")
+                        elif tilt == 90.0 and is_interior_partition:
+                            print(f"[ISO 13370] Skipped basement-wall upgrade for '{surf['name']}': "
+                                  f"name_adj_zone='{surf['name_adj_zone']}' indicates an interior partition, not a ground-contact element.")
                         # ---------------------------------------
                     else:
                         typology_elements[i] = "OP"
