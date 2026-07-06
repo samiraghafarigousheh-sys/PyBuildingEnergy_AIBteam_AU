@@ -548,6 +548,52 @@ def sanitize_and_validate_BUI(bui: dict,
         if new_surfaces:
             bui_clean["building_surface"].extend(new_surfaces)
 
+    # ── Issue 2: ventilation profile all-1.0 warning ─────────────────────────
+    vp = bui_clean.get("building_parameters", {}).get("ventilation_profile", {})
+    wd_vp = vp.get("weekday", [])
+    if len(wd_vp) == 24 and all(v == 1.0 for v in wd_vp):
+        add_issue(
+            "WARNING",
+            "building_parameters.ventilation_profile.weekday",
+            "ventilation_profile.weekday is constant 1.0 for all 24 hours. "
+            "This applies full ventilation rate overnight and in winter. "
+            "Consider reducing overnight and cold-season hours to ~0.15 "
+            "to represent background infiltration when windows are closed.",
+        )
+
+    # ── Issue 4: azimuth double-rotation warning ──────────────────────────────
+    bldg_az = bui_clean.get("building", {}).get("azimuth_relative_to_true_north", 0)
+    if bldg_az != 0:
+        cardinal_surfaces = [
+            s["name"] for s in bui_clean.get("building_surface", [])
+            if s.get("orientation", {}).get("azimuth", 0) in (0, 90, 180, 270)
+        ]
+        if cardinal_surfaces:
+            add_issue(
+                "WARNING",
+                "building.azimuth_relative_to_true_north",
+                f"azimuth_relative_to_true_north = {bldg_az}° and "
+                f"{len(cardinal_surfaces)} surfaces have cardinal azimuths (0/90/180/270°). "
+                "If these are already absolute orientations, set azimuth_relative_to_true_north = 0 "
+                "to avoid double rotation. "
+                f"Affected surfaces: {cardinal_surfaces}",
+            )
+
+    # ── Issue 9: construction_class capacitance vs zeroed surfaces ────────────
+    surfaces = bui_clean.get("building_surface", [])
+    all_zero_capacity = surfaces and all(
+        s.get("thermal_capacity", 0) == 0 for s in surfaces
+    )
+    construction_class = bui_clean.get("building", {}).get("construction_class", "")
+    if all_zero_capacity and construction_class not in ("class_i", ""):
+        add_issue(
+            "WARNING",
+            "building.construction_class",
+            f"All surface thermal capacities are 0 but construction_class is '{construction_class}'. "
+            "The internal zone capacitance C_int will still be non-zero (from construction_class), "
+            "which may inflate the Sankey residual. "
+            "Set construction_class = 'class_i' for consistency.",
+        )
 
     return bui_clean, issues
 

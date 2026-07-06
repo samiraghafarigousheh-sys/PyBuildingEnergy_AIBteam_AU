@@ -1225,12 +1225,15 @@ class ISO52016:
         Area in contact with the ground.
         Prefer surfaces with horizontal tilt (e.g. slab on grade); fall back to net floor area.
         """
+        # Identify genuine ground-contact surfaces: horizontal (tilt==0 or sky_view_factor==0)
+        # AND not an interior partition (name_adj_zone must be None).
         sog_area = None
         for surf in building_object["building_surface"]:
             sky_view_factor = surf.get("sky_view_factor")
             orientation = surf.get("orientation", {})
             tilt = orientation.get("tilt")
-            if sky_view_factor == 0 or tilt == 0:
+            is_interior = surf.get("name_adj_zone") is not None
+            if not is_interior and (sky_view_factor == 0 or tilt == 0):
                 sog_area = surf["area"]
                 break
         if sog_area is None:
@@ -2035,7 +2038,15 @@ class ISO52016:
             pbar.update(1)
 
             # Orientation and tilt
-        
+            # Issue 4 — AZIMUTH CONVENTION:
+            # surface["orientation"]["azimuth"] is ABSOLUTE (0=N, 90=E, 180=S, 270=W,
+            # relative to true geographic north).
+            # building["azimuth_relative_to_true_north"] is an ADDITIVE offset applied
+            # to all surface azimuths at solar calculation time.
+            # THEREFORE: if surface azimuths are already absolute, set
+            # azimuth_relative_to_true_north = 0. Only set it non-zero when surface
+            # azimuths are expressed relative to the building's front face.
+
             # 1) Assign the orientation string to all surfaces (without aggregating here)
             orientation_elements = np.empty(bui_eln, dtype=object)
             for i, surf in enumerate(building_object["building_surface"]):
@@ -2167,7 +2178,16 @@ class ISO52016:
 
             # Temperature ground and thermal bridges
             t_Th = ISO52016().Temp_calculation_of_ground(building_object, path_weather_file=path_weather_file_)
-            #
+
+            # Issue 8: surface-level thermal bridges (window frames, slab-edge junctions).
+            # These are independent of exposed_perimeter and accumulate even for mid-floor apartments.
+            H_tb_surfaces = sum(
+                s.get("psi_junction", 0.0) * s.get("length_junction", 0.0)
+                + s.get("psi_frame", 0.0) * s.get("perimeter_frame", 0.0)
+                for s in building_object["building_surface"]
+            )
+            t_Th.thermal_bridge_heat += H_tb_surfaces
+
             pbar.set_postfix({"Info": f"Calculating ground temperature"})
             pbar.update(1)
             h_pli_eli = (ISO52016().Conduttance_node_of_element(building_object).h_pli_eli)
@@ -2233,6 +2253,20 @@ class ISO52016:
                 profile_df[col] = profile_df["occupancy_profile"].values
   
         Tstepn = len(profile_df)
+
+        # Issue 10: verify schedule and weather DataFrames start on the same clock hour
+        # to avoid a silent hour-offset in all internal gain calculations.
+        if hasattr(profile_df.index, 'hour') and hasattr(sim_df.index, 'hour'):
+            if profile_df.index[0].hour != sim_df.index[0].hour:
+                import warnings
+                warnings.warn(
+                    f"Schedule profile and weather DataFrame start on different clock hours "
+                    f"(profile: {profile_df.index[0].hour}:00, weather: {sim_df.index[0].hour}:00). "
+                    "Internal gain schedules will be offset from weather data. "
+                    "Check that the profile generator reference year matches the weather file.",
+                    stacklevel=2,
+                )
+
         # ====================================
         # Get info of porfiles
         # ====================================
@@ -2546,6 +2580,19 @@ class ISO52016:
                     else:
                         int_gains = int_gains_conditioned_zone
 
+                    # Issue 6: apply any custom / extraction gains from the BUI dict.
+                    # Entries whose name is not one of the three standard types are added
+                    # directly. Negative full_load acts as heat extraction (e.g. exhaust fan).
+                    _ts_idx = sim_df.index[Tstepi]
+                    _is_weekend = _ts_idx.dayofweek >= 5
+                    _hour = _ts_idx.hour
+                    for _gain in building_object["building_parameters"].get("internal_gains", []):
+                        if _gain.get("name") in ("occupants", "appliances", "lighting"):
+                            continue
+                        _sched = _gain.get("weekend" if _is_weekend else "weekday", None)
+                        _frac = float(_sched[_hour]) if (_sched and len(_sched) == 24) else 1.0
+                        int_gains += float(_gain.get("full_load", 0.0)) * _frac * building_object["building"]["net_floor_area"]
+
                     #  LATENT MOISTURE MASS BALANCE 
                     # 1. Internal Moisture Gains (Occupants)
                     # ISO std: ~0.0000167 kg/s of water vapor per person
@@ -2570,17 +2617,23 @@ class ISO52016:
                     inertia_term = M_air / dt
                     x_air_t = (inertia_term * x_air_old + m_dot_vent * x_ext_t + G_int_t) / (inertia_term + m_dot_vent + 1e-9)
                     
-                    # 4. HVAC Dehumidification (Latent Cooling Load)
-                    # Typical comfort setpoint: approx 60% RH at 26C is ~0.012 kg/kg
-                    x_max_setpoint = 0.012 
-                    G_sys_t = 0.0 
-                    
-                    if x_air_t > x_max_setpoint and power_cooling_max_act < 0: # Only dehumidify if cooling system is ON
-                        # Required extraction rate (kg/s)
+                    # 4. HVAC Latent Load (dehumidification in cooling; humidification in heating)
+                    # Comfort bounds: ~20% RH at 20°C → x_min ≈ 0.004 kg/kg
+                    #                  ~60% RH at 26°C → x_max ≈ 0.012 kg/kg
+                    x_max_setpoint = 0.012
+                    x_min_setpoint = 0.004
+                    G_sys_t = 0.0
+
+                    if x_air_t > x_max_setpoint and power_cooling_max_act < 0:
+                        # Dehumidification: extract moisture to reach setpoint
                         G_sys_t = (inertia_term + m_dot_vent) * x_max_setpoint - (inertia_term * x_air_old + m_dot_vent * x_ext_t + G_int_t)
-                        x_air_t = x_max_setpoint # Lock to setpoint
-                        
-                    # Convert kg/s of water removed to Watts (Heat of Vaporization ~ 2.5 MJ/kg)
+                        x_air_t = x_max_setpoint
+                    elif x_air_t < x_min_setpoint and power_cooling_max_act >= 0:
+                        # Humidification: add moisture to reach lower comfort bound
+                        G_sys_t = -(inertia_term + m_dot_vent) * x_min_setpoint + (inertia_term * x_air_old + m_dot_vent * x_ext_t + G_int_t)
+                        x_air_t = x_min_setpoint
+
+                    # Convert kg/s of water added/removed to Watts (latent heat of vaporisation ~ 2.5 MJ/kg)
                     Latent_Load_W = abs(G_sys_t) * 2500000.0
                     
                     # Update state variables
@@ -2655,22 +2708,31 @@ class ISO52016:
                     # Temperature of unconditioned space (if any)
                     # ========================================
                     if building_object['building']['adj_zones_present']:
-                        c_ztu_h_max = 1 # from table B.16 
+                        c_ztu_h_max = 1 # from table B.16
                         if Tstepi >0:
                             # Single zones
                             if list_adj_zones == 1:
-                                theta_ztu_t = (Theta_int_op[Tstepi-1,0] - b_ztu*(Theta_int_op[Tstepi-1,0] - sim_df["T2m"].iloc[Tstepi]) + (phi_gn_dir_ztu/H_ztu))                        
-                                theta_ztu_t_checked =min(sim_df["T2m"].iloc[Tstepi] + c_ztu_h_max*(Theta_int_op[Tstepi-1,0] - sim_df["T2m"].iloc[Tstepi]), theta_ztu_t)
-                                theta_ztu[Tstepi] = theta_ztu_t_checked
-                            
+                                adj_zone_cfg = building_object['adjacent_zones'][0]
+                                if adj_zone_cfg.get("conditioned", False):
+                                    # Issue 7: conditioned neighbour — use their setpoint directly;
+                                    # ΔT ≈ 0 so heat exchange through shared surface is negligible.
+                                    theta_ztu[Tstepi] = float(adj_zone_cfg.get("setpoint", Theta_int_op[Tstepi-1,0]))
+                                else:
+                                    theta_ztu_t = (Theta_int_op[Tstepi-1,0] - b_ztu*(Theta_int_op[Tstepi-1,0] - sim_df["T2m"].iloc[Tstepi]) + (phi_gn_dir_ztu/H_ztu))
+                                    theta_ztu_t_checked = min(sim_df["T2m"].iloc[Tstepi] + c_ztu_h_max*(Theta_int_op[Tstepi-1,0] - sim_df["T2m"].iloc[Tstepi]), theta_ztu_t)
+                                    theta_ztu[Tstepi] = theta_ztu_t_checked
+
                             # Multiple zones
                             elif list_adj_zones > 1:
                                 for z in range(list_adj_zones):
                                     zone = building_object['adjacent_zones'][z]
                                     H_ztu = H_ztu_zones_df.loc['H_ztu'][zone['name']]
-                                    theta_ztu_t = (Theta_int_op[Tstepi-1,0] - b_ztu*(Theta_int_op[Tstepi-1,0] - sim_df["T2m"].iloc[Tstepi]) + (phi_gn_dir_ztu/H_ztu))
-                                    theta_ztu_t_checked =min(sim_df["T2m"].iloc[Tstepi] + c_ztu_h_max*(Theta_int_op[Tstepi-1,0] - sim_df["T2m"].iloc[Tstepi]), theta_ztu_t)
-                                    theta_ztu[Tstepi,z] = theta_ztu_t_checked
+                                    if zone.get("conditioned", False):
+                                        theta_ztu[Tstepi,z] = float(zone.get("setpoint", Theta_int_op[Tstepi-1,0]))
+                                    else:
+                                        theta_ztu_t = (Theta_int_op[Tstepi-1,0] - b_ztu*(Theta_int_op[Tstepi-1,0] - sim_df["T2m"].iloc[Tstepi]) + (phi_gn_dir_ztu/H_ztu))
+                                        theta_ztu_t_checked = min(sim_df["T2m"].iloc[Tstepi] + c_ztu_h_max*(Theta_int_op[Tstepi-1,0] - sim_df["T2m"].iloc[Tstepi]), theta_ztu_t)
+                                        theta_ztu[Tstepi,z] = theta_ztu_t_checked
                         theta_ztu_df = pd.DataFrame(theta_ztu, columns=H_ztu_zones_df.columns.tolist())
 
                     for Eli in range(bui_eln):

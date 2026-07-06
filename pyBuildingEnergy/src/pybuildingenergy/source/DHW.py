@@ -28,7 +28,7 @@ from pybuildingenergy.global_inputs import WATER_DENSITY, WATER_SPECIFIC_HEAT_CA
 def get_calendar_by_name(location_name: str):
     """
     Return a Workalendar country or state instance given a human-readable name,
-    e.g. 'Australia', 'Victoria', or 'NSW'.
+    e.g. 'Italy', 'France', 'Germany'.
     """
     try:
         from workalendar.registry import registry
@@ -36,38 +36,11 @@ def get_calendar_by_name(location_name: str):
         if cal_cls is None:
             raise KeyError(location_name)
         return cal_cls()
-    except Exception:
-        # Fallback for common EU countries (extend as needed)
-        try:
-            from workalendar.oceania import (
-                Australia, 
-                NewSouthWales, 
-                Victoria, 
-                Queensland, 
-                SouthAustralia, 
-                WesternAustralia, 
-                Tasmania, 
-                AustralianCapitalTerritory, 
-                NorthernTerritory
-            )
-
-            fallback = {
-                "Australia": Australia,
-                "NSW": NewSouthWales,
-                "Victoria": Victoria,
-                "Queensland": Queensland,
-                "SA": SouthAustralia,
-                "WA": WesternAustralia,
-                "Tasmania": Tasmania,
-                "ACT": AustralianCapitalTerritory,
-                "NT": NorthernTerritory
-            }
-            return fallback[location_name]()
-        except Exception as e:
-            raise ValueError(
-                f"Cannot resolve calendar for location '{location_name}'. "
-                "Ensure 'workalendar' is installed and the name is valid."
-            ) from e
+    except Exception as e:
+        raise ValueError(
+            f"Cannot resolve calendar for location '{location_name}'. "
+            "Ensure 'workalendar' is installed and the name is valid."
+        ) from e
 
 
 def generate_daily_calendar(year: int, month: int, country_calendar) -> dict:
