@@ -256,6 +256,18 @@ If the internal-gains schedule DataFrame and the weather DataFrame started on di
 
 **Fix:** added a runtime check comparing `profile_df.index[0].hour` to `sim_df.index[0].hour` and raising a `warnings.warn` if they differ.
 
+#### 10. Warm-up month leaking into annual results and Sankey totals — silently shifted every monthly analysis by one month
+
+The engine prepends a copy of December to the front of the weather/schedule data (9,504 hours: warm-up December + a real Jan–Dec year) so the thermal state can converge before 1 January. The code responsible for stripping that warm-up month back off before returning results — flagged by its own comment, `# ESCLUDI IL MESE DI WARM-UP DAL SANKEY` ("exclude the warm-up month from the Sankey") — never actually did so: `start_idx`, used both to start the simulation loop *and* (aliased into `Tstep_first_act`) to slice the returned output, was hardcoded to `0` instead of `744`.
+
+Effects: `hourly_sim` was always 9,504 rows (a real December glued onto the front of a real year) instead of 8,760; the annual/Sankey totals double-counted December (their accumulators ran unconditionally across the full loop, including the warm-up hours); and any *positional* monthly analysis of `hourly_sim` — e.g. chunking it into fixed 744/672/744/…-hour blocks assuming row 0 = 1 January, as the `comparison_pybuildingenergy_vs_pybuildingenergyau.ipynb` notebook's V5 seasonal-pattern check does — was silently shifted forward by one month: true January data landed in the "February" bucket, true February in "March", and so on. This is why that notebook showed cooling peaking in March instead of Dec/Jan/Feb for both ISO 52016 engines it compares, while EnergyPlus (which tracks real dates from its own `.eso` output, unaffected by this) did not.
+
+**Fix:** introduced `WARMUP_HOURS = 744` as a constant separate from `start_idx`. `start_idx` stays `0` so the simulation loop still executes and converges thermal state during the warm-up hours (unchanged); `Tstep_first_act` now uses `WARMUP_HOURS` instead of aliasing `start_idx`; and the per-timestep Sankey/annual accumulator block is gated on `Tstepi >= WARMUP_HOURS` so warm-up hours influence the physics but are excluded from what gets summed or returned. Thermal-state continuity (`Theta_prev_state`) is still tracked unconditionally every timestep, so there's no discontinuity at the December-warm-up → January boundary. Verified: a full-year run now returns `hourly_sim` with exactly 8,760 rows, index `Jan 1 → Dec 31`, zero duplicate timestamps.
+
+This bug had already been silently worked around elsewhere in the repo: `tests/AIBpybuildingenergy_305_unit.py` manually slices `hourly_sim["Q_Latent"].iloc[-8760:]` rather than summing the whole series — that workaround remains harmless (now a no-op) under the fix.
+
+> Note: `comparison_pybuildingenergy_vs_pybuildingenergyau.ipynb`'s "Original pyBuildingEnergy" engine is a fresh `pip install` of the unmodified upstream package, so it retains this bug (this fix only applies to this fork's vendored copy) — re-running that notebook should show the **AIB fork's** seasonal pattern check pass, but the **original engine's** V5 check will still show the one-month shift.
+
 ### `source/check_input.py` — input validator
 
 Three new validator warnings were added to `sanitize_and_validate_BUI`, surfaced before a simulation runs rather than discovered after the fact in the output:
