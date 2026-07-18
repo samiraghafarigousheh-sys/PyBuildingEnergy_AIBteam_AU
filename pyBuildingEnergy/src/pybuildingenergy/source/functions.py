@@ -700,3 +700,74 @@ def plot_sankey_building(sankey_data):
     )])
     fig.update_layout(title="Annual energy balance — Sankey", font_size=12)
     return fig
+
+
+def dynamic_window_properties(g_normal, u_nominal, alpha_sol_t, phi_sol_t, beta_k_t, gamma_k_t, wind_speed_m_s):
+    """
+    Calculates the dynamic U-value and g-value (Total Solar Energy Transmittance)
+    based on real-time solar incidence angle and exterior wind speed.
+
+    :param g_normal: Nominal Solar Heat Gain Coefficient (g-value) at normal incidence
+    :param u_nominal: Nominal Thermal Transmittance (U-value) [W/m2K]
+    :param alpha_sol_t: Solar altitude angle [deg] at time t
+    :param phi_sol_t: Solar azimuth angle [deg] at time t
+    :param beta_k_t: Window tilt [deg] (90 = vertical)
+    :param gamma_k_t: Window azimuth [deg]
+    :param wind_speed_m_s: Exterior wind speed [m/s] at time t
+
+    :return: (g_dynamic, u_dynamic)
+    """
+    def to_float(x, default=0.0):
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return default
+
+    g_norm = to_float(g_normal)
+    u_nom = to_float(u_nominal)
+    a = to_float(alpha_sol_t)
+    p = to_float(phi_sol_t)
+    b = to_float(beta_k_t)
+    g = to_float(gamma_k_t)
+    v_wind = to_float(wind_speed_m_s)
+
+    # 1. Convert angles to radians for trigonometric functions
+    alpha = np.radians(a)
+    phi = np.radians(p)
+    beta = np.radians(b)
+    gamma = np.radians(g)
+
+    # 2. Calculate cosine of the solar incidence angle (theta)
+    cos_theta = np.sin(alpha) * np.cos(beta) + np.cos(alpha) * np.sin(beta) * np.cos(phi - gamma)
+    cos_theta = np.clip(cos_theta, -1.0, 1.0)
+
+    if cos_theta <= 0:
+        # The sun is behind the window plane; no direct solar transmission
+        g_dynamic = 0.0
+    else:
+        # Incident Angle Modifier (IAM) - empirical curve (Karlsson & Roos).
+        # Prevents over-admitting solar heat at steep/grazing sun angles.
+        iam = 1.0 - 0.15 * ((1.0 - cos_theta) ** 3)
+        iam = float(np.clip(iam, 0.0, 1.0))
+        g_dynamic = g_norm * iam
+
+    # 3. Calculate dynamic U-value based on wind speed
+    if u_nom > 0:
+        R_si = 0.13  # Internal surface resistance (ISO standard)
+        R_se_nominal = 0.04  # External surface resistance at nominal 4 m/s wind
+
+        # Extract the pure thermal resistance of the glass pane itself
+        R_total_nominal = 1.0 / u_nom
+        R_glass = R_total_nominal - R_si - R_se_nominal
+        R_glass = max(0.001, R_glass)  # prevent negative resistance
+
+        # Real-time exterior convective heat transfer coefficient
+        h_ce_dynamic = 4.0 + (4.0 * v_wind)
+        R_se_dynamic = 1.0 / h_ce_dynamic
+
+        R_total_dynamic = R_si + R_glass + R_se_dynamic
+        u_dynamic = 1.0 / R_total_dynamic
+    else:
+        u_dynamic = 0.0
+
+    return g_dynamic, u_dynamic
