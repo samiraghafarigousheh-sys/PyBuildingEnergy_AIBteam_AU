@@ -5,12 +5,12 @@ This document compares:
 - **Upstream:** [`EURAC-EEBgroup/pyBuildingEnergy`](https://github.com/EURAC-EEBgroup/pyBuildingEnergy) (the original package)
 - **This fork:** [`samiraghafarigousheh-sys/PyBuildingEnergy_AIBteam_AU`](https://github.com/samiraghafarigousheh-sys/PyBuildingEnergy_AIBteam_AU), specifically the vendored copy at `pyBuildingEnergy/`
 
-and presents the fork's intended modification pipeline as three stages, in order:
+and presents the fork's modification pipeline as three stages, in order:
 
 | Stage | What | Present in this repo's code? |
 |---|---|---|
 | **1** | Add a latent-heat (moisture) model | ✅ Yes — verified in `source/utils.py` |
-| **2** | High-fidelity upgrades documented in Shrivastava (2026) | ❌ **No** — see [Stage 2](#stage-2--high-fidelity-upgrades-shrivastava-2026-documented-only) |
+| **2** | High-fidelity upgrades documented in Shrivastava (2026) | ✅ Yes (6 of 7) — merged from [`Sarthak790/pybuildinenergy_AIB`](https://github.com/Sarthak790/pybuildinenergy_AIB), see [Stage 2](#stage-2--high-fidelity-upgrades-shrivastava-2026) |
 | **3** | Final AIB-team fixes (ground coupling, hemisphere, adjacent zones, thermal bridges, validator warnings, etc.) | ✅ Yes — verified in `source/utils.py`, `check_input.py`, `DHW.py` |
 
 ## How the comparison was done
@@ -22,10 +22,9 @@ The vendored copy in this repo was checked out from upstream at version `2.0.3`,
 - `src/pybuildingenergy/source/utils.py` — the ISO 52016 calculation engine
 - `src/pybuildingenergy/source/check_input.py` — the input validator
 - `src/pybuildingenergy/source/DHW.py` — the domestic hot water calendar helper
+- (as of Stage 2, also `src/pybuildingenergy/source/functions.py` and `src/pybuildingenergy/source/ventilation.py`, see below)
 
-Everything else in `src/pybuildingenergy/` (`__init__.py`, `global_inputs.py`, `pybuildingenergy.py`, `source/functions.py`, `source/generate_profile.py`, `source/graphs.py`, `source/iso_15316_1.py`, `source/ventilation.py`, `source/table_iso_16798_1.py`) is byte-for-byte identical to upstream `2.0.3`. That last point matters for Stage 2 below: the paper's upgrades touch exactly `functions.py`, `utils.py`, and `ventilation.py` — and two of those three files carry **zero** differences from upstream.
-
-I also searched every commit on every branch of this repository (`git log --all` / `git grep`) for the function and variable names unique to the Stage 2 upgrades (`dynamic_window_properties`, `Swinbank`, `node_weights`, `internal_reflectance`, `dynamic_rho_air`, `Phi_tr_adj_zones`, `Karlsson`) — none appear anywhere in this repo's history.
+Everything else in `src/pybuildingenergy/` (`__init__.py`, `global_inputs.py`, `pybuildingenergy.py`, `source/generate_profile.py`, `source/graphs.py`, `source/iso_15316_1.py`, `source/table_iso_16798_1.py`) is byte-for-byte identical to upstream `2.0.3`.
 
 ---
 
@@ -45,23 +44,29 @@ This dehumidification-only version is the base that Stage 3, item 5 below later 
 
 ---
 
-## Stage 2 — High-fidelity upgrades (Shrivastava, 2026) — documented only
+## Stage 2 — High-fidelity upgrades (Shrivastava, 2026)
 
-**Status: ❌ not present anywhere in this repository's code, on any branch or commit.**
+**Status: ✅ 6 of 7 merged into `functions.py`, `utils.py`, `ventilation.py`. 1 of 7 intentionally not merged (see item 2.7).**
 
-A separate document, *"Documentation of High-Fidelity Upgrades to the pybuildingenergy Pipeline"* (Sarthak Shrivastava, July 9 2026), describes 7 further upgrades intended to correct ISO 52016's tendency to overestimate peak cooling loads and underestimate passive heat dissipation, by injecting dynamic effects that only detailed engines like EnergyPlus normally capture. They are reproduced below **for reference**, exactly as documented in that paper, so the intended pipeline is legible end-to-end — but none of this code exists in `pyBuildingEnergy/src/pybuildingenergy/` in this repo today.
+A separate document, *"Documentation of High-Fidelity Upgrades to the pybuildingenergy Pipeline"* (Sarthak Shrivastava, July 9 2026), describes 7 upgrades intended to correct ISO 52016's tendency to overestimate peak cooling loads and underestimate passive heat dissipation, by injecting dynamic effects that only detailed engines like EnergyPlus normally capture.
 
-| # | Upgrade | Target file(s) (per the paper) | In this repo? |
+The matching code was not on the `main` branch of the paper's companion repository, [`Sarthak790/pybuildinenergy_AIB`](https://github.com/Sarthak790/pybuildinenergy_AIB) — it was found on that repo's `prakhar_branch`. That branch's vendored `pyBuildingEnergy/` copy is otherwise an *older* snapshot of this fork (it predates Stage 3: it still carries the pre-fix Australia-calendar fallback in `DHW.py` and is missing all of `check_input.py`'s validator warnings and `utils.py`'s Stage-3 fixes), so the merge into this repo was done by cherry-picking only the genuinely new Stage-2 code onto the current Stage-3 state — nothing from Stage 3 was reverted, and `check_input.py`/`DHW.py` were left untouched since that branch's versions of those two files are strictly behind this fork's.
+
+| # | Upgrade | File(s) | In this repo? |
 |---|---|---|---|
-| 1 | Dynamic window properties (Karlsson & Roos model) | `functions.py`, `utils.py` | ❌ |
-| 2 | Escaping solar radiation (15% internal reflectance) | `utils.py` | ❌ |
-| 3 | Split solar transmission / glass absorption | `utils.py` | ❌ |
-| 4 | Variable air density for ventilation (ideal gas law) | `ventilation.py` | ❌ |
-| 5 | Non-linear long-wave sky radiation (Swinbank model) | `utils.py` | ❌ |
-| 6 | Transient heat accumulation / thermal-mass node skew | `utils.py` | ❌ |
-| 7 | Coupling of thermally conditioned zones (heat bleed) | `utils.py` | ❌ |
+| 1 | Dynamic window properties (Karlsson & Roos model) | `functions.py`, `utils.py` | ✅ |
+| 2 | Escaping solar radiation (15% internal reflectance) | `utils.py` | ✅ |
+| 3 | Split solar transmission / glass absorption | `utils.py` | ✅ |
+| 4 | Variable air density for ventilation (ideal gas law) | `ventilation.py` | ✅ |
+| 5 | Non-linear long-wave sky radiation (Swinbank model) | `utils.py` | ✅ |
+| 6 | Transient heat accumulation / thermal-mass node skew | `utils.py` | ✅ |
+| 7 | Coupling of thermally conditioned zones (heat bleed) | `utils.py` | ❌ not merged — superseded by Stage 3, item 7 |
 
-### 2.1 Dynamic window properties
+A wind-driven exterior convective coefficient (`h_ce = 4.0 + 4.0·v_wind`, replacing the fixed nominal value on `EXT` surfaces) came along with items 1 and 5 in the source branch and was merged too, since item 5's radiative-coefficient update reads from the same per-timestep external-coefficient arrays.
+
+**One deviation from the source branch:** in `prakhar_branch`, the dynamic-window-properties call (item 1) was nested inside the `if colname in sim_df.columns:` shading-lookup branch, so a window lacking a shading-factor column would fall through to `tau_win = 0.0` — silently zeroing its solar gain for every hour, not just correcting it for incidence angle. This repo's merge computes the dynamic window properties for every window unconditionally (whenever `g_gl_wi_t[Eli] != 0`), independent of whether shading data exists, and keeps `tau_win = 0.0` only for genuinely opaque `EXT`/`ADJ` surfaces (where it is correct — opaque walls have no window transmission).
+
+### 2.1 Dynamic window properties — ✅ merged (placement fixed, see deviation note above)
 **Reasoning:** ISO 52016 assumes constant U_win and g_win, but both vary with wind speed and solar incidence angle; an angle-dependent correction factor avoids over-admitting solar heat at steep sun angles.
 ```python
 az_map = {"NV": 0.0, "EV": 90.0, "SV": 180.0, "WV": 270.0, "HOR": 0.0}
@@ -78,7 +83,7 @@ g_dyn, u_dyn = dynamic_window_properties(
 )
 ```
 
-### 2.2 Escaping solar radiation
+### 2.2 Escaping solar radiation — ✅ merged as-is
 **Reasoning:** the standard traps 100% of transmitted solar radiation inside the zone; in reality some reflects back out through the glazing, and ignoring this inflates summer cooling load.
 ```python
 internal_reflectance = 0.15
@@ -89,7 +94,7 @@ Phi_sol_dir_zt_t += tau_win * (
 ) * area_elements[Eli] * (1 - Ffr_wi) * (1.0 - internal_reflectance)
 ```
 
-### 2.3 Split solar transmission and glass absorption
+### 2.3 Split solar transmission and glass absorption — ✅ merged as-is
 **Reasoning:** the standard applies g_win instantly to interior nodes; physically, part of the solar energy is absorbed into the glass pane and conducts in gradually, creating thermal lag.
 ```python
 tau_win = 0.85 * g_dyn    # 85% directly transmitted light
@@ -97,8 +102,9 @@ alpha_win = 0.15 * g_dyn  # 15% absorbed heat in the glass pane
 
 a_sol_pli_eli[0, Eli] = alpha_win * (1 - Ffr_wi)
 ```
+The merge additionally feeds the dynamic U-value into the window's conductance node (`h_pli_eli[0, Eli]`), which the source branch also did alongside this item.
 
-### 2.4 Variable air density for ventilation
+### 2.4 Variable air density for ventilation — ✅ merged as-is
 **Reasoning:** ventilation heat transfer uses a constant air density (1.204 kg/m³); hot summer air is less dense, so this overestimates the thermal mass of incoming outdoor air during peak cooling.
 ```python
 T_avg_K = ((float(Tz) + float(Te)) / 2.0) + 273.15
@@ -107,7 +113,7 @@ dynamic_rho_air = 101325.0 / (287.05 * T_avg_K)
 Hve_k_t = c_air * dynamic_rho_air * (qv_arg_in_m3_h / 3600.0)
 ```
 
-### 2.5 Non-linear long-wave sky radiation
+### 2.5 Non-linear long-wave sky radiation — ✅ merged as-is
 **Reasoning:** the baseline model assumes a constant 11 K air-to-sky offset, underestimating night-time radiant cooling; a Swinbank formulation captures this non-linearly.
 ```python
 T_air_K = sim_df["T2m"].iloc[Tstepi] + 273.15
@@ -121,7 +127,7 @@ phi_sky_eli_t = sky_factor_elements[Eli] * epsilon_surf * sigma * ((T_surf_K ** 
 heat_radiative_elements_external[Eli] = 4.0 * epsilon_surf * sigma * (((T_surf_K + T_sky_K) / 2.0) ** 3)
 ```
 
-### 2.6 Transient heat accumulation (thermal-mass skew)
+### 2.6 Transient heat accumulation (thermal-mass skew) — ✅ merged, ground-node handling preserved
 **Reasoning:** the rigid Class-D RC-network distributes thermal mass equally across wall nodes (25% each), causing unrealistic instant cooling-load spikes when solar radiation hits the exterior.
 ```python
 node_weights = [0.125, 0.25, 0.25, 0.25, 0.125]
@@ -130,9 +136,14 @@ for i in range(len(el_type)):
     if el_type[i] == "OP" or el_type[i] == "ADJ":
         for node in range(5):
             kappa_pli_eli_[node, i] = list_kappa_el[i] * node_weights[node]
+    elif el_type[i] == "GR":
+        # ground-floor distribution kept as originally specified (unchanged by this upgrade)
+        kappa_pli_eli_[2, i] = list_kappa_el[i] / 4
+        kappa_pli_eli_[3, i] = list_kappa_el[i] / 2
+        kappa_pli_eli_[4, i] = list_kappa_el[i] / 4
 ```
 
-### 2.7 Coupling of thermally conditioned zones
+### 2.7 Coupling of thermally conditioned zones — ❌ not merged (superseded by Stage 3, item 7)
 **Reasoning:** the standard assumes zero heat transfer between conditioned zones; in residential apartments, heat bleeding through party walls to adjacent units/corridors is significant.
 ```python
 Phi_tr_adj_zones = 0.0
@@ -147,11 +158,11 @@ for adj_zone in building_object.get("adjacent_zones", []):
 Phi_int_z_t += Phi_tr_adj_zones
 ```
 
-> Note: item 2.7 above (a fixed 20 °C neighbour temperature bled in as a gain) targets the same physical problem as Stage 3, item 7 below (a `conditioned` flag that reads the neighbour's real setpoint) — but the two are different, non-interchangeable implementations. Only the Stage 3 version exists in this repo.
+This item was deliberately **not** merged: it targets the same physical problem as Stage 3, item 7 (a fixed 20 °C neighbour temperature bled in as a flat gain, vs. Stage 3's `conditioned` flag that reads the neighbour's *actual* setpoint through the proper ISO 13789 zone-temperature term), and the two are not interchangeable — applying both would double-count the adjacent-zone heat exchange. Stage 3's version is the one implemented in this repo, since it already existed and is the more physically direct approach.
 
-### Reported result (as published, not reproduced here)
+### Reported result (as published by the paper, describes a different codebase)
 
-The paper's Table 1 shows the annual result after cumulatively applying its 7 upgrades:
+The paper's Table 1 shows the annual result after cumulatively applying its 7 upgrades on top of *its own* baseline (not this repo's Stage 3 fixes):
 
 ![Table 1 from Shrivastava (2026): progressive change in QH, QC and Qtotal across the 5 reported steps](assets/shrivastava_table1_chart.png)
 
@@ -163,7 +174,11 @@ The paper's Table 1 shows the annual result after cumulatively applying its 7 up
 | 4 | 2,513.0 | 818.0 | 1,138.379 | 284.3281 | 4,753.707 |
 | 5 | 2,597.402 | 723.6886 | 1,138.379 | 284.3281 | 4,743.797 |
 
-Reading the paper's own framing: cooling load (Q_C) falls steadily (1,075 → 724 kWh, −33%) as each upgrade removes another source of over-admitted solar/ventilation heat, while heating load (Q_H) rises correspondingly (2,116 → 2,597 kWh) as the same physics (escaping radiation, thinner solar admission, colder night sky) that suppresses summer cooling also suppresses winter free heat. Q_DHW and Q_Latent are unaffected by any of the 7 upgrades (none of them touch domestic hot water or the moisture balance) and are held constant across all 5 rows. **These numbers cannot currently be reproduced from this repository** — they describe a codebase state that was never committed here, and Stage 3 (next) is a different, independently-developed set of fixes rather than a continuation of this table.
+Reading the paper's own framing: cooling load (Q_C) falls steadily (1,075 → 724 kWh, −33%) as each upgrade removes another source of over-admitted solar/ventilation heat, while heating load (Q_H) rises correspondingly (2,116 → 2,597 kWh) as the same physics (escaping radiation, thinner solar admission, colder night sky) that suppresses summer cooling also suppresses winter free heat. Q_DHW and Q_Latent are unaffected by any of the 7 upgrades (none of them touch domestic hot water or the moisture balance) and are held constant across all 5 rows.
+
+**These specific numbers are not reproduced by this repository as-is**: they describe the paper's own baseline (before this fork's Stage 3 fixes), run against its own case-study weather/geometry data, which was never part of this repo. This repo's code now runs 6 of the 7 upgrades *combined with* Stage 3 (a materially different baseline — e.g. Stage 3's ISO 13370 partition-wall guard and conditioned-adjacent-zone coupling change the same heat-loss paths these upgrades target), so a fresh run of the Barry St case study with the merged engine would not be expected to reproduce this exact table, only the same qualitative direction (lower Q_C, higher Q_H) on whichever inputs it's run against.
+
+A full-year smoke test (the `test_general.py` BESTEST-derived fixture, 9,504 hourly timesteps, run against an EPW file since this environment has no PVGIS network access) confirmed the merged engine completes without errors and produces non-zero, varying `Q_Latent`/`x_air_in` output — but that run used a generic single-zone fixture with mismatched climate data purely to validate the code path, not the actual case-study numbers, so no energy totals from it are reported here.
 
 ---
 
