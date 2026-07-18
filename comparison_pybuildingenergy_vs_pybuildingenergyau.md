@@ -77,17 +77,42 @@ The notebook's own itemised diff (`differences` table, cell 8), reproduced here:
 | Return signature | 2-tuple: `(hourly_sim, annual_results_df)` | 3-tuple: `(hourly_sim, annual_results_df, sankey_data)` |
 | Validation messages | Partly in Italian (e.g. `"exposed_perimeter era 0; impostato a 1.0"`) | Equivalent messages in English |
 
-## Validation suite (V1–V5)
+## 4.5 Validation checks
 
-| Check | What it tests | Result (last saved run) |
+A suite of five automated checks (notebook cells 15–18) is applied to all three engines, both before and after the Stage 2 and Stage 3 engine modifications documented in `ENGINE_CHANGES.md`, using this comparison notebook as the execution framework. The purpose of the checks is twofold: to confirm internal consistency of each engine, and to identify which aspects of the discrepancy between the ISO engines and EnergyPlus are attributable to correctable defects rather than fundamental method-level differences.
+
+**V1 — Determinism.** Each engine is executed twice on identical inputs and outputs compared for agreement. This verifies the absence of non-deterministic state and is a prerequisite for interpreting any subsequent difference as physically meaningful.
+
+**V2 — Annual energy balance (Sankey closure).** For the pyBuildingEnergy engines, the Sankey decomposition is used to compute the closure residual across the main heat-transfer components: transmission losses, ventilation losses, cooling energy extracted, and change in thermal storage. A residual exceeding 5% identifies sub-models where energy is not conserved and directs further diagnostic investigation. This check is applied to the ISO engines only.
+
+**V3 — Limit behaviour: near-perfect insulation and zero gains.** All U-values are set to 0.001 W/(m²K) and all internal gains removed. Total annual demand should fall by more than 90% relative to the baseline; the ventilation-only residual is cross-checked analytically (≈781 kWh/yr) against EnergyPlus's result of 783.4 kWh/yr.
+
+**V4 — Limit behaviour: zero internal gains, normal insulation.** Internal gains are removed while insulation remains unchanged. Cooling demand is expected to fall substantially and heating demand to rise modestly, since internal gains are both the dominant summer load driver and a significant winter free-heating source.
+
+**V5 — Seasonal pattern (Southern Hemisphere).** Monthly heating is expected to peak in June–August and monthly cooling in December–February. A reversed seasonal peak indicates an error in the solar position algorithm, the hemisphere convention, or the coldest-month parameter — making this the most diagnostically informative check for the Australian application context.
+
+### Implementation status in this notebook
+
+| Check | Implementation | Status |
 |---|---|---|
-| **V1 — Determinism** | Same input run twice must give bit-exact output | ✅ PASS for all three engines |
-| **V2 — Annual energy balance** | `Q_HC ≈ Q_tr + Q_ve − Q_sol − Q_int` | Skipped for both ISO engines — neither exposes transmission/ventilation/solar/internal components in a directly summable form (`hourly_sim` only has `T_op`/`T_ext`/`Q_H`/`Q_C`; the fork's Sankey dict uses different key names than the check expects) |
-| **V3 — Near-zero insulation + zero gains** | Demand should drop >90%, driven only by ventilation losses | ❌ for all three: Original −69.4%, AIB fork −25.7%, EnergyPlus −951% (i.e. demand *rose* — the V3 IDF patch didn't zero the window U-value correctly in the regex substitution). The final conservation check (ventilation-only loss ≈ 781 kWh/yr, estimated vs. EnergyPlus's 783.4 kWh/yr) does line up well, suggesting the *magnitude* is broadly right even though the percentage-drop framing fails |
-| **V4 — Zero internal gains, normal insulation** | Cooling should drop, heating may rise slightly | Descriptive only in the saved output (no pass/fail printed) — Original 0→2,572 kWh unchanged (gains removal didn't reduce cooling in this run), AIB fork 157.8→132.8 kWh heating / 1,277.6→920.1 kWh cooling, EnergyPlus 0→0 kWh heating / 74.5→8.5 kWh cooling |
-| **V5 — Seasonal pattern** (Melbourne: heating should peak Jun–Aug, cooling Dec–Feb) | ❌ Original: heating peaks Jan (should be winter), cooling peaks Mar (should be summer). ❌ AIB fork: heating peaks Sep, cooling peaks Mar. Only EnergyPlus's cooling peak (Jan) is correct — its heating peak (Jan) is not. |
+| **V1** | Runs each ISO engine twice (`_run_orig`/`_run_mod`) and EnergyPlus twice (`_ep_run_and_parse`), compares with `np.array_equal` | ✅ Matches the specification above |
+| **V2** | **Fixed.** Previously always printed "insufficient component data — skipping balance check" because the helper searched for flat keys (`Q_tr`, `Q_ve`, `Q_sol`, `Q_int`) that don't exist anywhere in this engine's actual return value. The real structure is `sankey_data = {"inputs": {...}, "outputs": {...}, "energy_accumulated_zone": ...}` (named entries like `"Heating"`, `"Internal gains"`, `"Ventilation (losses)"`, `"Transmission - <surface name>"`). Rewritten to consume that structure directly and apply the 5% threshold from the methodology above. One subtlety: the engine's own Sankey builder folds any unclosed balance into an explicit `"Transmission (residual)"` output bucket so the *diagram* visually balances — that bucket is excluded from the V2 closure sum, since it *is* the imbalance being measured (including it would make the residual trivially ~0% by construction). Scoped to the ISO engines only, per the methodology — EnergyPlus's HTML component-load report is a different decomposition, not a Sankey closure of the same input/output split, so the previous notebook's partial/fragile attempt to fold it into V2 was dropped rather than left half-working. | ✅ Fixed for the Modified AIB fork. Genuinely not applicable to the unmodified Original engine — its 2-tuple return has no Sankey data at all (Sankey output is itself one of this fork's additions), which V2 now reports explicitly instead of the previous vague message. |
+| **V3 / V4** | `>90%` drop threshold (`drop_threshold=0.90`) and the analytical ventilation-loss cross-check are already implemented as specified | ✅ Matches the specification above |
+| **V5** | Monthly chunking already implemented as specified; a separate root-cause bug (the prepended December warm-up month never being stripped from `hourly_sim`, silently shifting every monthly analysis forward by one month) was found and fixed — see `ENGINE_CHANGES.md`, Stage 3 item 10 | ✅ Matches the specification above, and no longer confounded by the warm-up-month shift |
 
-**V5 is the most important finding in this notebook**: at the time this notebook was run, *none* of the three engines reliably showed Melbourne's expected Southern-Hemisphere seasonal pattern, and the two ISO 52016 engines were worst-affected. This is consistent with — and predates — the later fix in this fork's engine (`ENGINE_CHANGES.md`, Stage 3 item 1) that made the "coldest month" hemisphere-aware (previously hardcoded to January, correct only for the Northern Hemisphere) instead of latitude-derived. A re-run of this notebook against the current engine state would be needed to confirm whether V5 now passes for the AIB fork.
+### Result (last full notebook run)
+
+| Check | Result |
+|---|---|
+| V1 | ✅ PASS for all three engines |
+| V2 | Not run under the fixed implementation yet in a full Colab execution (this environment has no PVGIS/EnergyPlus network access to reproduce the Barry St case study end-to-end). The corrected logic was verified against a live run of the fork engine on a different, simpler building fixture in an offline sandbox test: it exactly reproduces the engine's own internal `SANKEY CHECK` console line (17.7% residual) instead of silently reporting "insufficient data" — i.e. it now correctly surfaces a real, pre-existing energy-balance gap in the fork's transmission/thermal-bridge accounting for diagnostic follow-up, which is precisely V2's stated purpose. A fresh full run of this notebook is needed for the Barry St-specific number. |
+| V3 | ❌ for all three at the time of the last saved run: Original −69.4%, AIB fork −25.7%, EnergyPlus −951% (i.e. demand *rose* — the V3 IDF patch didn't zero the window U-value correctly in the regex substitution). The analytical cross-check (ventilation-only loss ≈ 781 kWh/yr vs. EnergyPlus's 783.4 kWh/yr) does line up well, suggesting the *magnitude* is broadly right even though the percentage-drop framing failed for that run. |
+| V4 | Descriptive only in the saved output (no pass/fail printed) — Original 0→2,572 kWh unchanged (gains removal didn't reduce cooling in this run), AIB fork 157.8→132.8 kWh heating / 1,277.6→920.1 kWh cooling, EnergyPlus 0→0 kWh heating / 74.5→8.5 kWh cooling |
+| V5 | At the time of the last saved run: ❌ Original (heating peaks Jan, should be winter; cooling peaks Mar, should be summer). ❌ AIB fork (heating peaks Sep; cooling peaks Mar). Only EnergyPlus's cooling peak (Jan) was correct — its heating peak (Jan) was not. This was **the most important finding** from this notebook: none of the three engines reliably showed Melbourne's expected Southern-Hemisphere seasonal pattern, and the two ISO 52016 engines were worst-affected — consistent with the warm-up-month shift bug above and the separate hemisphere-aware-coldest-month fix (`ENGINE_CHANGES.md`, Stage 3 item 1). A fresh full run is needed to confirm V5 now passes for the AIB fork with both fixes in place. |
+
+## 4.6 Accuracy metrics
+
+The methodology also defines a set of accuracy metrics (following Ballarini et al. [3] and ASHRAE Guideline 14 [14]) used to quantify agreement between the ISO 52016-1 engines and EnergyPlus. That metric set is not reproduced in this document — see the source methodology write-up for the definitions.
 
 ## §9 — Monthly consumption chart
 
