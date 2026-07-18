@@ -87,6 +87,15 @@ class VentilationInternalGains:
 
         """
 
+        # Variable air density for ventilation (Shrivastava, 2026, item 4):
+        # the ISO standard assumes a constant density (rho_air, default 1.204
+        # kg/m3); hot summer air is less dense, so a fixed value overestimates
+        # the thermal mass of incoming outdoor air during peak cooling. Replace
+        # it with the Ideal Gas Law evaluated at the average of indoor/outdoor
+        # temperature for this timestep.
+        T_avg_K = ((float(Tz) + float(Te)) / 2.0) + 273.15
+        dynamic_rho_air = 101325.0 / (287.05 * T_avg_K)  # Standard pressure [Pa] / (R_specific_air * T)
+
         if type_ventilation == "temp_wind":
             # --- Collect transparent surfaces as "windows"
             windows = [s for s in building_object.get("building_surface", []) if s.get("type") == "transparent"]
@@ -162,13 +171,13 @@ class VentilationInternalGains:
             qv_arg_in_m3_h = 3600.0 * (rho_a_ref_eff / rho_a_e) * (Aw_tot / 2.0) * (max(wind_term, stack_term) ** 0.5)
 
             # Heat transfer coefficient [W/K]
-            Hve_k_t = c_air * rho_air * (qv_arg_in_m3_h / 3600.0)
+            Hve_k_t = c_air * dynamic_rho_air * (qv_arg_in_m3_h / 3600.0)
 
         elif type_ventilation == "occupancy":
             # flowrate_person: [l/(s m2)]  -> convert to [m3/s] via /1000
             zone_area = float(building_object["building"]["net_floor_area"])
             qv_m3_s = zone_area * float(flowrate_person) / 1000.0
-            Hve_k_t = rho_air * c_air * qv_m3_s
+            Hve_k_t = dynamic_rho_air * c_air * qv_m3_s
 
         elif type_ventilation == "custom":
             Hve_k_t = float(custom_Hve_k_t)
