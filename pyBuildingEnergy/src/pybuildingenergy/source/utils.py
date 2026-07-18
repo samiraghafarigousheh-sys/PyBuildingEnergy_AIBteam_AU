@@ -2329,7 +2329,16 @@ class ISO52016:
         # ------------------------------------------------------------------
         # ESCLUDI IL MESE DI WARM-UP DAL SANKEY
         # ------------------------------------------------------------------
-        start_idx = 0  # 31d * 24h = 744 (from 1 January, if December is warm-up)
+        # WARMUP_HOURS is the length (in hours) of the December copy prepended
+        # to sim_df (see "weather_data augmented by warmup period" above) to let
+        # the thermal state settle before 1 January. start_idx must stay 0 so the
+        # simulation loop below still iterates through (and converges during)
+        # those warm-up hours; only the *reported* output (Tstep_first_act,
+        # further down) and the annual/Sankey accumulators are gated on
+        # WARMUP_HOURS, so the warm-up period influences the physics but is
+        # excluded from what gets summed or returned.
+        WARMUP_HOURS = 744  # 31d * 24h (December)
+        start_idx = 0  # from 1 January, if December is warm-up
         E_solar_Wh = 0.0
         E_internal_Wh = 0.0
         E_heating_Wh = 0.0
@@ -2399,7 +2408,7 @@ class ISO52016:
                     
 
                     if isinstance(building_object, dict):
-                        if (Tstepi < 744):  # During warmup, almost unlimited heating power to ensure convergence to setpoint
+                        if (Tstepi < WARMUP_HOURS):  # During warmup, almost unlimited heating power to ensure convergence to setpoint
                             power_heating_max = warmup_P
                         else:
                             power_heating_max = building_object["building_parameters"]["system_capacities"]["heating_capacity"]
@@ -2415,7 +2424,7 @@ class ISO52016:
                     power_cooling_max_act = 0
                 else:
                     if isinstance(building_object, dict):
-                        if (Tstepi < 744):  # During warmup, almost unlimited cooling power to ensure convergence to setpoint
+                        if (Tstepi < WARMUP_HOURS):  # During warmup, almost unlimited cooling power to ensure convergence to setpoint
                             power_cooling_max = -1e6
                         else:
                             power_cooling_max = -building_object["building_parameters"]["system_capacities"]["cooling_capacity"]
@@ -3019,57 +3028,66 @@ class ISO52016:
                 # =========================
                 dt_h = float(Dtime[Tstepi]) / 3600.0
 
-                # 1) Storage (air + envelope)
+                # 1) Storage (air + envelope) — state continuity always tracked,
+                # so there is no discontinuity at the Dec-warmup -> Jan boundary;
+                # only the annual/Sankey accumulator below is gated to skip warmup.
                 Theta_curr_state = VecB[:, colB_act]
                 dTheta_state = Theta_curr_state - Theta_prev_state
-                E_storage_Wh += float(np.dot(C_state, dTheta_state)) / 3600.0
+                storage_step_Wh = float(np.dot(C_state, dTheta_state)) / 3600.0
                 Theta_prev_state = Theta_curr_state
 
-                # 2) Direct inputs
-                phi_solar = float(Phi_sol_dir_zt_t)
-                phi_int   = float(int_gains)
-                E_solar_Wh    += phi_solar * dt_h
-                E_internal_Wh += phi_int   * dt_h
+                # The first WARMUP_HOURS timesteps are a prepended copy of December
+                # used only to let the thermal state converge before 1 January; they
+                # must not be double-counted in the annual/Sankey totals (December
+                # is simulated again for real at the end of the year).
+                if Tstepi >= WARMUP_HOURS:
+                    E_storage_Wh += storage_step_Wh
 
-                # 3) Heating/Cooling (uses current load)
-                phi_hc = float(Phi_HC_nd_act[Tstepi])
-                if   phi_hc > 0: E_heating_Wh +=  phi_hc * dt_h
-                elif phi_hc < 0: E_cooling_Wh += (-phi_hc) * dt_h
+                    # 2) Direct inputs
+                    phi_solar = float(Phi_sol_dir_zt_t)
+                    phi_int   = float(int_gains)
+                    E_solar_Wh    += phi_solar * dt_h
+                    E_internal_Wh += phi_int   * dt_h
 
-                # 4) Ventilation
-                T_in  = float(Theta_int_air[Tstepi, 0])
-                T_out = float(sim_df["T2m"].iloc[Tstepi])
-                q_vent = float(H_ve_nat) * (T_in - T_out)
-                if q_vent > 0:  E_vent_loss_Wh += q_vent * dt_h
-                else:           E_solar_Wh     += (-q_vent) * dt_h
+                    # 3) Heating/Cooling (uses current load)
+                    phi_hc = float(Phi_HC_nd_act[Tstepi])
+                    if   phi_hc > 0: E_heating_Wh +=  phi_hc * dt_h
+                    elif phi_hc < 0: E_cooling_Wh += (-phi_hc) * dt_h
 
-                # 5) Thermal bridges
-                q_tb = float(t_Th.thermal_bridge_heat) * (T_in - T_out)
-                if q_tb > 0:  E_tb_loss_Wh += q_tb * dt_h
-                else:         E_solar_Wh   += (-q_tb) * dt_h
+                    # 4) Ventilation
+                    T_in  = float(Theta_int_air[Tstepi, 0])
+                    T_out = float(sim_df["T2m"].iloc[Tstepi])
+                    q_vent = float(H_ve_nat) * (T_in - T_out)
+                    if q_vent > 0:  E_vent_loss_Wh += q_vent * dt_h
+                    else:           E_solar_Wh     += (-q_vent) * dt_h
 
-                # 6) Ground
-                T_gr = float(t_Th.Theta_gr_ve[sim_df.index.month[Tstepi] - 1])
-                R_gr = float(t_Th.R_gr_ve) if float(t_Th.R_gr_ve) != 0 else 1e9
-                q_ground = (T_in - T_gr) / R_gr
-                if q_ground > 0:  E_ground_loss_Wh += q_ground * dt_h
-                else:             E_solar_Wh       += (-q_ground) * dt_h
+                    # 5) Thermal bridges
+                    q_tb = float(t_Th.thermal_bridge_heat) * (T_in - T_out)
+                    if q_tb > 0:  E_tb_loss_Wh += q_tb * dt_h
+                    else:         E_solar_Wh   += (-q_tb) * dt_h
 
-                # 7) Transmission for element (OP, W)
-                T_air = float(Theta_int_air[Tstepi, 0])
-                T_rad = float(Theta_int_r_mn[Tstepi, 0])
-                for Eli in range(bui_eln):
-                    if surface_types[Eli] not in ("OP", "W"):  continue
-                    n_nodes_Eli = nodes.Pln[Eli]
-                    if n_nodes_Eli == 0:                       continue
-                    vecb_row_surface = nodes.PlnSum[Eli] + n_nodes_Eli
-                    T_surf_int = float(VecB[vecb_row_surface, colB_act])
-                    A   = float(area_elements[Eli])
-                    hci = float(heat_convective_elements_internal[Eli])
-                    hri = float(heat_radiative_elements_internal[Eli])
-                    q_cond = A * (hci * (T_air - T_surf_int) + hri * (T_rad - T_surf_int))
-                    if   q_cond > 0: E_trans_loss_by_surface_Wh[surface_names[Eli]] += q_cond * dt_h
-                    elif q_cond < 0: E_solar_Wh += (-q_cond) * dt_h
+                    # 6) Ground
+                    T_gr = float(t_Th.Theta_gr_ve[sim_df.index.month[Tstepi] - 1])
+                    R_gr = float(t_Th.R_gr_ve) if float(t_Th.R_gr_ve) != 0 else 1e9
+                    q_ground = (T_in - T_gr) / R_gr
+                    if q_ground > 0:  E_ground_loss_Wh += q_ground * dt_h
+                    else:             E_solar_Wh       += (-q_ground) * dt_h
+
+                    # 7) Transmission for element (OP, W)
+                    T_air = float(Theta_int_air[Tstepi, 0])
+                    T_rad = float(Theta_int_r_mn[Tstepi, 0])
+                    for Eli in range(bui_eln):
+                        if surface_types[Eli] not in ("OP", "W"):  continue
+                        n_nodes_Eli = nodes.Pln[Eli]
+                        if n_nodes_Eli == 0:                       continue
+                        vecb_row_surface = nodes.PlnSum[Eli] + n_nodes_Eli
+                        T_surf_int = float(VecB[vecb_row_surface, colB_act])
+                        A   = float(area_elements[Eli])
+                        hci = float(heat_convective_elements_internal[Eli])
+                        hri = float(heat_radiative_elements_internal[Eli])
+                        q_cond = A * (hci * (T_air - T_surf_int) + hri * (T_rad - T_surf_int))
+                        if   q_cond > 0: E_trans_loss_by_surface_Wh[surface_names[Eli]] += q_cond * dt_h
+                        elif q_cond < 0: E_solar_Wh += (-q_cond) * dt_h
 
 
                 if Tstepi < 6:  # primi 6 passi di debug
@@ -3082,7 +3100,8 @@ class ISO52016:
         # =========================
         #  Close balance
         # =========================
-        Tstep_first_act = start_idx  # = 744 (dopo warm-up)
+        Tstep_first_act = WARMUP_HOURS  # = 744 (dopo warm-up) — NOT start_idx, which is 0 so the
+        # simulation loop above still executes the December warm-up hours to converge thermal state
 
         # numeric clamp to avoid -0.0 or microscopically negative values
         def _clamp(x: float) -> float:
